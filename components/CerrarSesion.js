@@ -1,80 +1,96 @@
-import React, { useState, useEffect } from "react";
-import { View, Text, StyleSheet, Modal, TouchableOpacity, ImageBackground } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  TouchableOpacity,
+  ImageBackground,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { getAuth, signOut } from "firebase/auth";
+import { logOut } from "../services/authService";
 
 const CerrarSesion = ({ navigation }) => {
   const [modalVisible, setModalVisible] = useState(true);
   const [countdown, setCountdown] = useState(5);
+  const signedOutRef = useRef(false);
+  const intervalRef = useRef(null);
+  const timeoutRef = useRef(null);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCountdown(prevCountdown => {
-        if (prevCountdown <= 1) {
-          clearInterval(timer);
-          handleSignOut();  
-        }
-        return prevCountdown - 1;
-      });
+    // Interval solo para UI (contador)
+    intervalRef.current = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
     }, 1000);
 
-    return () => clearInterval(timer);
+    // Timeout para ejecutar el sign-out una sola vez
+    timeoutRef.current = setTimeout(() => {
+      handleSignOut();
+    }, 5000);
+
+    return () => {
+      clearInterval(intervalRef.current);
+      clearTimeout(timeoutRef.current);
+    };
   }, []);
 
-  const handleSignOut = () => {
-    const auth = getAuth();
-    signOut(auth)
-      .then(() => {
-        setModalVisible(false);
-        console.log("Sesión cerrada correctamente");
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'InicioSesion' }],
-        });
-      })
-      .catch((error) => {
-        console.error("Error al cerrar sesión:", error);
+  const handleSignOut = async () => {
+    if (signedOutRef.current) return; // evitar doble ejecución
+    signedOutRef.current = true;
+
+    try {
+      await logOut();
+      setModalVisible(false);
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "InicioSesion" }],
       });
+    } catch (error) {
+      console.error("Error al cerrar sesión:", error);
+      // Podrías mostrar un toast si quieres
+    } finally {
+      clearInterval(intervalRef.current);
+      clearTimeout(timeoutRef.current);
+    }
   };
 
   return (
-    <ImageBackground source={require('../assets/fondocerrar.jpg')} style={styles.backgroundImage}>
-    <Modal
-      transparent={true}
-      visible={modalVisible}
-      animationType="fade"
+    <ImageBackground
+      source={require("../assets/fondocerrar.jpg")}
+      style={styles.backgroundImage}
     >
-      <View style={styles.modalBackground}>
-        <View style={styles.modalContainer}>
-         <Ionicons name="log-out-outline" size={50} color="#FF6347" style={styles.icon} />
-          <Text style={styles.modalTitle}>¡Gracias por visitar SiredeMovil!</Text>
-          <Text style={styles.modalMessage}>Tu cuenta se cerrará en {countdown} segundos.</Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => {
-              setModalVisible(false);
-              handleSignOut();
-            }}
-          >
-            <Text style={styles.buttonText}>Cerrar Ahora</Text>
-          </TouchableOpacity>
+      <Modal transparent visible={modalVisible} animationType="fade">
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContainer}>
+            <Ionicons
+              name="log-out-outline"
+              size={50}
+              color="#FF6347"
+              style={styles.icon}
+            />
+            <Text style={styles.modalTitle}>
+              ¡Gracias por visitar SiredeMovil!
+            </Text>
+            <Text style={styles.modalMessage}>
+              Tu cuenta se cerrará en {countdown} segundos.
+            </Text>
+            <TouchableOpacity style={styles.button} onPress={handleSignOut}>
+              <Text style={styles.buttonText}>Cerrar ahora</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </Modal>
-  </ImageBackground>
+      </Modal>
+    </ImageBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  backgroundImage: {
-    flex: 1,
-    resizeMode: 'cover',
-  },
+  backgroundImage: { flex: 1, resizeMode: "cover" },
   modalBackground: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
   modalContainer: {
     width: 300,
@@ -83,12 +99,10 @@ const styles = StyleSheet.create({
     backgroundColor: "white",
     alignItems: "center",
   },
-  icon: {
-    marginBottom: 20,
-  },
+  icon: { marginBottom: 20 },
   modalTitle: {
     fontSize: 25,
-    fontFamily: 'Montserrat-Bold',
+    fontFamily: "Montserrat-Bold",
     textAlign: "center",
     marginBottom: 15,
   },
@@ -96,7 +110,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 20,
     textAlign: "center",
-    fontFamily: 'Montserrat-Medium',
+    fontFamily: "Montserrat-Medium",
   },
   button: {
     marginTop: 10,
@@ -104,10 +118,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FF6347",
     borderRadius: 5,
   },
-  buttonText: {
-    color: "white",
-    fontFamily: 'Montserrat-Bold',
-  },
+  buttonText: { color: "white", fontFamily: "Montserrat-Bold" },
 });
 
 export default CerrarSesion;

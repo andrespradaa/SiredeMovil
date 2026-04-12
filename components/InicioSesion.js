@@ -1,101 +1,138 @@
-import { useVideoPlayer, VideoView } from 'expo-video';
-import React, { useState, useEffect, useRef } from 'react';
-import { StyleSheet, Text, View, TextInput, Image, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
-import { signInWithEmailAndPassword, sendPasswordResetEmail, getAuth, fetchSignInMethodsForEmail } from 'firebase/auth';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { Video } from 'expo-av';
+// screens/InicioSesion.js
+import React, { useState } from "react";
+import {
+  StyleSheet,
+  Text,
+  View,
+  TextInput,
+  Image,
+  ActivityIndicator,
+  TouchableOpacity,
+  Modal,
+} from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { showMessage } from "react-native-flash-message";
-import { firestore } from '../firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
+import { useVideoPlayer, VideoView } from "expo-video";
+import { db } from '../firebaseConfig';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+
+import {
+  signInEmail,
+  sendReset,
+  getSignInMethods,
+} from "../services/authService";
+import { getInitialSetupCompleted } from "../services/userProfileService";
+import { useGoogleLogin } from "../hooks/useGoogleLogin";
+import { auth } from "../firebaseConfig";
 
 const InicioSesion = ({ navigation }) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [secureTextEntry, setSecureTextEntry] = useState(true);
-  const [usuarioAutenticado, setUsuarioAutenticado] = useState(false);
   const [mostrarCargando, setMostrarCargando] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
-  const [emailReset, setEmailReset] = useState('');
-  const [initialSetupCompleted, setInitialSetupCompleted] = useState(null);
+  const [emailReset, setEmailReset] = useState("");
 
-  const passwordVisibility = () => {
-    setSecureTextEntry(!secureTextEntry);
-  };
-  
-  const auth = getAuth();
+  const passwordVisibility = () => setSecureTextEntry((v) => !v);
+
+  // Fondo de video
+  const videoSource = require("../assets/fondoInicio.mp4");
+  const player = useVideoPlayer(videoSource, (p) => {
+    p.loop = true;
+    p.play();
+  });
+
+  // Google Sign-In
+  const { request, promptAsync } = useGoogleLogin();
 
   const iniciarSesion = async () => {
+    //console.log("ingresé a iniciarSesión");
+    setMostrarCargando(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
-      console.log('Usuario autenticado:', user.email);
-      setUsuarioAutenticado(true);
-      setMostrarCargando(true);
+      const { user } = await signInEmail(email, password);
 
-      // Aquí se realiza la verificación en Firestore
-      const checkInitialSetupCompleted = async () => {
-        const userId = user.uid;
-        const userDocRef = doc(firestore, 'users', userId); // Ruta: colección 'users', documento con ID del usuario
-    
-        try {
-          const userDoc = await getDoc(userDocRef);
-          
-          if (userDoc.exists()) {
-            const data = userDoc.data();
-            const setupCompleted = data.initialSetupCompleted;
-    
-            if (setupCompleted) {
-              console.log('Initial setup completed:', setupCompleted);
-              // Navegar a la pantalla principal si el setup está completado
-              navigation.replace('TabInicio');
-            } else {
-              console.log('Initial setup not completed.');
-              // Navegar a la pantalla de configuración inicial si no está completado
-              navigation.replace('PasswordChangeScreen');
-            }
-          } else {
-            console.log('No such document!');
-          }
-        } catch (error) {
-          setMostrarCargando(false);
-          console.error('Error fetching document:', error);
-          showMessage({
-            message: "Error",
-            description: "Hubo un error al verificar tu cuenta. Por favor, intenta de nuevo.",
-            type: "danger",
-            position: "top",
-            icon: "danger",
-            duration: 4000,
-          });
-        }
-      };
-
-      // Ejecuta la verificación en Firestore
-      checkInitialSetupCompleted();
-      
-    } catch (error) {
-      console.log('Error al autenticar usuario:', error);
-      let mensajeError;
-      switch (error.code) {
-        case 'auth/invalid-email':
-          mensajeError = 'El correo electrónico que ingresaste no es válido.';
-          break;
-        case 'auth/user-disabled':
-          mensajeError = 'Este usuario ha sido deshabilitado.';
-          break;
-        case 'auth/user-not-found':
-          mensajeError = 'No se encontró ninguna cuenta con este correo electrónico.';
-          break;
-        case 'auth/wrong-password':
-          mensajeError = 'La contraseña que ingresaste es incorrecta.';
-          break;
-        case 'auth/too-many-requests':
-          mensajeError = 'Por favor, inténtelo más tarde, ha excedido el número de intentos para iniciar sesión.';
-          break;
-        default:
-          mensajeError = 'Lo sentimos, no se han podido autenticar tus credenciales. Por favor, intenta nuevamente.';
+      const providerId = user.providerData?.[0]?.providerId ?? "password";
+      const userRef = doc(db, "users", user.uid);
+      let snap = await getDoc(userRef);
+      // Crea el doc si no existe
+      if (!snap.exists()) {
+        await setDoc(userRef, {
+          email: user.email ?? "",
+          nombre: "",
+          rol: "",
+          profesion: "",
+          telefono: "",
+          photoURL: user.photoURL ?? "",
+          createdAt: serverTimestamp(),
+          provider: providerId,
+          onboarding: {
+            // si es password pediremos cambio la 1ª vez, en otros proveedores no
+            passwordChanged: providerId !== "password",
+            profileCompleted: false,
+          },
+          initialSetupCompleted: false, // si prefieres mantenerlo por compatibilidad
+        });
+        snap = await getDoc(userRef);
       }
+      const data = snap.data() || {};
+      const onboarding = data.onboarding || {};
+      const needsPwd = providerId === "password" && !onboarding.passwordChanged;
+      const needsProfile = !onboarding.profileCompleted;
+
+      if (needsPwd) {
+        // puedes pasar la siguiente ruta como param
+        navigation.replace("PasswordChangeScreen", {
+          next: needsProfile ? "DrawerNavi" : "TabInicio",
+        });
+        return;
+      }
+
+      if (needsProfile) {
+        navigation.replace("DrawerNavi"); // directo, sin pantallas intermedias
+        return;
+      }
+      navigation.replace('DrawerNavi');
+     
+    } catch (error) {
+      console.log("Error al autenticar usuario:", error);
+      let mensajeError;
+      if (
+        error.code === "firestore/permission-denied" ||
+        /insufficient permissions/i.test(String(error))
+      ) {
+        mensajeError =
+          "No tienes permisos para leer tu perfil. Contacta al administrador.";
+      } else {
+        switch (error.code) {
+          case "auth/invalid-email":
+            mensajeError = "El correo electrónico que ingresaste no es válido.";
+            break;
+          case "auth/user-disabled":
+            mensajeError = "Este usuario ha sido deshabilitado.";
+            break;
+          case "auth/user-not-found":
+            mensajeError =
+              "No se encontró ninguna cuenta con este correo electrónico.";
+            break;
+          case "auth/wrong-password":
+            mensajeError = "La contraseña que ingresaste es incorrecta.";
+            break;
+          case "auth/too-many-requests":
+            mensajeError =
+              "Por favor, inténtalo más tarde; has excedido el número de intentos.";
+            break;
+          case "auth/invalid-credential":
+            // Puede ser password incorrecta o proyecto/config erróneos.
+            mensajeError =
+              "Credenciales inválidas. Verifica tu contraseña o consulta si tu cuenta fue creada en este proyecto.";
+            break;
+          default:
+            mensajeError =
+              "Lo sentimos, no se pudieron autenticar tus credenciales. Intenta nuevamente.";
+        }
+      }
+
       showMessage({
         message: "Error",
         description: mensajeError,
@@ -104,17 +141,20 @@ const InicioSesion = ({ navigation }) => {
         icon: "danger",
         duration: 4000,
       });
+    } finally {
+      setMostrarCargando(false);
     }
   };
 
   const comprobarEmail = async () => {
     try {
-      const signInMethods = await fetchSignInMethodsForEmail(auth, emailReset);
-      if (signInMethods.length > 0) {
-        await sendPasswordResetEmail(auth, emailReset);
+      const methods = await getSignInMethods(emailReset);
+      if (methods.length > 0) {
+        await sendReset(emailReset);
         showMessage({
           message: "Éxito",
-          description: "Se ha enviado un correo para restablecer tu contraseña. Revisa tu bandeja de entrada o la carpeta de spam.",
+          description:
+            "Enviamos un correo para restablecer tu contraseña. Revisa bandeja de entrada o spam.",
           type: "success",
           position: "top",
           icon: "success",
@@ -123,7 +163,8 @@ const InicioSesion = ({ navigation }) => {
       } else {
         showMessage({
           message: "Error",
-          description: "No se encontró ninguna cuenta registrada con este correo electrónico.",
+          description:
+            "No se encontró ninguna cuenta registrada con este correo.",
           type: "danger",
           position: "top",
           icon: "danger",
@@ -131,10 +172,10 @@ const InicioSesion = ({ navigation }) => {
         });
       }
     } catch (error) {
-      console.log('Error al comprobar el correo:', error);
+      console.log("Error al comprobar el correo:", error);
       showMessage({
         message: "Error",
-        description: "Ocurrió un error. Por favor, intenta de nuevo.",
+        description: "Ocurrió un error. Intenta de nuevo.",
         type: "danger",
         position: "top",
         icon: "danger",
@@ -143,27 +184,23 @@ const InicioSesion = ({ navigation }) => {
     }
   };
 
-  
-  const videoSource = require('../assets/fondoInicio.mp4');
-  const player = useVideoPlayer(videoSource, (player) => {
-    player.loop = true;
-    player.play();
-  });
-
   return (
     <View style={estilos.container}>
       <VideoView
         style={StyleSheet.absoluteFill}
         player={player}
         resizeMode="cover"
-        allowsFullscreen={false}
+        fullscreenOptions={{ enabled: false }}
         allowsPictureInPicture={false}
         nativeControls={false}
         contentFit="cover"
       />
 
       <View style={estilos.contenidoContainer}>
-        <Image source={require('../assets/siredelogo1.png')} style={estilos.logo} />
+        <Image
+          source={require("../assets/siredelogo1.png")}
+          style={estilos.logo}
+        />
         <TextInput
           style={estilos.inputsTexto}
           onChangeText={setEmail}
@@ -171,6 +208,8 @@ const InicioSesion = ({ navigation }) => {
           color="#FFFFFF"
           placeholder="Correo electrónico"
           placeholderTextColor="#B3B3B3"
+          autoCapitalize="none"
+          keyboardType="email-address"
         />
         <View style={estilos.inputContainer}>
           <TextInput
@@ -181,64 +220,95 @@ const InicioSesion = ({ navigation }) => {
             placeholder="Contraseña"
             placeholderTextColor="#B3B3B3"
             secureTextEntry={secureTextEntry}
+            autoCapitalize="none"
           />
-         <TouchableOpacity style={estilos.iconContainer} onPress={passwordVisibility}>
+          <TouchableOpacity
+            style={estilos.iconContainer}
+            onPress={passwordVisibility}
+          >
             <Ionicons
-              name={secureTextEntry ? 'eye-off' : 'eye'} // Cambia el nombre según los íconos que prefieras
+              name={secureTextEntry ? "eye-off" : "eye"}
               size={20}
               color="#FFFFFF"
             />
           </TouchableOpacity>
         </View>
-        
+
         <View style={estilos.olvideContrasenaContainer}>
           <TouchableOpacity onPress={() => setModalVisible(true)}>
-            <Text style={estilos.olvideContrasena}>¿Olvidaste tu contraseña?</Text>
+            <Text style={estilos.olvideContrasena}>
+              ¿Olvidaste tu contraseña?
+            </Text>
           </TouchableOpacity>
         </View>
+
         {mostrarCargando ? (
           <View style={estilos.cargandoContainer}>
             <ActivityIndicator size="large" color="#696969" />
             <Text style={estilos.mensajeCargando}>Iniciando Sesión...</Text>
           </View>
         ) : (
-          <TouchableOpacity
-            style={estilos.boton}
-            onPress={iniciarSesion}
-          >
-            <Text style={estilos.botonTexto}>Iniciar Sesión</Text>
-          </TouchableOpacity>
+          <>
+            <TouchableOpacity
+              style={estilos.boton}
+              onPress={iniciarSesion}
+              disabled={!email || !password}
+            >
+              <Text style={estilos.botonTexto}>Iniciar Sesión</Text>
+            </TouchableOpacity>
+
+            {/* Google Sign-In */}
+            <TouchableOpacity
+              style={[estilos.boton, { marginTop: 12 }]}
+              onPress={() => promptAsync()}
+              disabled={!request}
+            >
+              <Text style={estilos.botonTexto}>Continuar con Google</Text>
+            </TouchableOpacity>
+          </>
         )}
+
         <View style={estilos.signupContainer}>
           <Text style={estilos.signupText}>¿No tienes tu cuenta aún?</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('AccessRequest')}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate("AccessRequest")}
+          >
             <Text style={estilos.signupLink}>¡Solicita acceso aquí!</Text>
           </TouchableOpacity>
-      </View>
+        </View>
       </View>
 
-      <Modal
-        visible={modalVisible}
-        transparent={true}
-        animationType="slide"
-      >
+      <Modal visible={modalVisible} transparent animationType="slide">
         <View style={estilos.modalContainer}>
-          
           <View style={estilos.modalContent}>
-             <MaterialIcons name="password" size={100} color="#6D100A" />
+            <MaterialIcons name="password" size={100} color="#6D100A" />
             <Text style={estilos.titulo}>Restablecer Contraseña</Text>
-            <Text style={estilos.subtitulo}>Por favor ingresa en el recuadro el correo Institucional con el que te registraste para poder restablecer tu contraseña.</Text>
+            <Text style={estilos.subtitulo}>
+              Ingresa el correo institucional con el que te registraste para
+              restablecer tu contraseña.
+            </Text>
             <TextInput
               style={estilos.modalInput}
               placeholder="Correo electrónico"
               placeholderTextColor="#696969"
               value={emailReset}
               onChangeText={setEmailReset}
+              autoCapitalize="none"
+              keyboardType="email-address"
             />
-            <TouchableOpacity style={estilos.modalButton} onPress={comprobarEmail}>
+            <TouchableOpacity
+              style={estilos.modalButton}
+              onPress={comprobarEmail}
+            >
               <Text style={estilos.modalButtonText}>Restablecer</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[estilos.modalButton, { marginTop: 10, backgroundColor: 'gray' }]} onPress={() => setModalVisible(false)}>
+            <TouchableOpacity
+              style={[
+                estilos.modalButton,
+                { marginTop: 10, backgroundColor: "gray" },
+              ]}
+              onPress={() => setModalVisible(false)}
+            >
               <Text style={estilos.modalButtonText}>Cerrar</Text>
             </TouchableOpacity>
           </View>
@@ -248,165 +318,128 @@ const InicioSesion = ({ navigation }) => {
   );
 };
 
-
 const estilos = StyleSheet.create({
   container: {
-    backgroundColor: '#E6E6FA',
-    position: 'relative', // Necesario para posicionar elementos hijos absolutamente
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#E6E6FA",
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
     padding: 30,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
   },
   contenidoContainer: {
-    width: '100%',
-    height: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  titulo: {
-    fontSize: 22,
-    fontFamily: 'Montserrat-Bold',
-    color: '#6D100A',
-  },
+  titulo: { fontSize: 22, fontFamily: "Montserrat-Bold", color: "#6D100A" },
   subtitulo: {
     fontSize: 15,
-    color: '#132F20',
-    fontFamily: 'Montserrat-Medium',
-    textAlign:'justify',
-    marginTop:10,
-    marginBottom:10
+    color: "#132F20",
+    fontFamily: "Montserrat-Medium",
+    textAlign: "justify",
+    marginTop: 10,
+    marginBottom: 10,
   },
   inputsTexto: {
     fontSize: 15,
     height: 45,
     width: 300,
     marginBottom: -3,
-    borderWidth: 1,
-    padding: 10,
-    borderColor: 'yellowgreen',
     borderWidth: 3,
-    color: '#FFFFFF',
+    padding: 10,
+    borderColor: "yellowgreen",
+    color: "#FFFFFF",
     borderRadius: 10,
-    fontFamily: 'Montserrat-Medium',
+    fontFamily: "Montserrat-Medium",
   },
-  logo: {
-    width: 400,
-    height: 75,
-    resizeMode: 'contain',
-    marginBottom: 40,
-    
-  },
-  cargandoContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  logo: { width: 400, height: 75, resizeMode: "contain", marginBottom: 40 },
+  cargandoContainer: { alignItems: "center", justifyContent: "center" },
   mensajeCargando: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    fontFamily: 'Montserrat-Bold',
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    fontFamily: "Montserrat-Bold",
   },
-  animacionContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  olvideContrasenaContainer: {
-    //width: 300,
-    //alignItems: 'flex-end',
-    marginTop: 10,
-    marginBottom: 25,
-  },
+  olvideContrasenaContainer: { marginTop: 10, marginBottom: 25 },
   olvideContrasena: {
-    color: '#FFFFFF',
-    textDecorationLine: 'underline',
-    fontFamily: 'Montserrat-Medium',
+    color: "#FFFFFF",
+    textDecorationLine: "underline",
+    fontFamily: "Montserrat-Medium",
   },
   botonTexto: {
     fontSize: 15,
-    color: 'white',
-    fontWeight: 'bold',
-    fontFamily: 'Montserrat-Bold',
+    color: "white",
+    fontWeight: "bold",
+    fontFamily: "Montserrat-Bold",
   },
   boton: {
-    backgroundColor: 'rgba(250, 250, 250, 0.1)',
+    backgroundColor: "rgba(250, 250, 250, 0.1)",
     padding: 10,
-    borderRadius: 10, 
+    borderRadius: 10,
   },
-  modalContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  modalContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   modalContent: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     padding: 20,
     borderRadius: 15,
     width: 320,
-    alignItems: 'center',
-    elevation: 10, // Sombra en Android
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
+    alignItems: "center",
+    elevation: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4.65,
   },
   modalInput: {
     height: 45,
-    width: '100%',
+    width: "100%",
     borderWidth: 1,
-    borderColor: 'gray',
+    borderColor: "gray",
     borderRadius: 8,
     paddingLeft: 10,
     marginBottom: 15,
-    fontFamily: 'Montserrat-Medium',
+    fontFamily: "Montserrat-Medium",
   },
   modalButton: {
-    backgroundColor: '#6D100A',
+    backgroundColor: "#6D100A",
     padding: 12,
     borderRadius: 8,
-    width: '100%',
-    alignItems: 'center',
+    width: "100%",
+    alignItems: "center",
   },
   modalButtonText: {
-    color: 'white',
-    fontFamily: 'Montserrat-Bold',
+    color: "white",
+    fontFamily: "Montserrat-Bold",
     fontSize: 16,
   },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderRadius: 5,
     paddingHorizontal: 10,
   },
-  iconContainer: {
-    position: 'absolute',
-    right: 20,
-    top:13
-  },
+  iconContainer: { position: "absolute", right: 20, top: 13 },
   signupContainer: {
-    position: 'absolute', // Posiciona el View en relación al contenedor principal
-    bottom: -1, // Ubica el View en la parte inferior del contenedor
-    width: '100%', // Asegúrate de que ocupe el ancho completo
-    alignItems: 'center',
-    padding: 20, // Agrega un poco de padding si es necesario
+    position: "absolute",
+    bottom: -1,
+    width: "100%",
+    alignItems: "center",
+    padding: 20,
   },
+  /*  */
   signupText: {
     fontSize: 16,
-    color: '#696969',
-    fontFamily: 'Montserrat-Medium',
+    color: "#696969",
+    fontFamily: "Montserrat-Medium",
   },
   signupLink: {
     fontSize: 16,
-    color: '#C3D730',
+    color: "#C3D730",
     marginTop: 5,
-    fontFamily: 'Montserrat-Bold',
+    fontFamily: "Montserrat-Bold",
   },
 });
 

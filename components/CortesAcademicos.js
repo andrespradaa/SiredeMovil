@@ -1,37 +1,50 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  ScrollView,
+  ActivityIndicator,
+} from "react-native";
 import { showMessage } from "react-native-flash-message";
-import { useNavigation } from '@react-navigation/native';
-import { API_BASE_URL } from './Config';
+import { useNavigation } from "@react-navigation/native";
+import { API_BASE_URL } from "./Config";
 
 const CortesAcademicos = ({ selectedProgram, onNext }) => {
   const navigation = useNavigation();
   const [cortesIniciales, setCortesIniciales] = useState([]);
   const [corteFinal, setCorteFinal] = useState([]);
-  const [selectedCorteInicial, setSelectedCorteInicial] = useState('');
-  const [modalCorteInicialVisible, setModalCorteInicialVisible] = useState(false);
+  const [selectedCorteInicial, setSelectedCorteInicial] = useState("");
+  const [modalCorteInicialVisible, setModalCorteInicialVisible] =
+    useState(false);
   const [datosBackend, setDatosBackend] = useState({
     graduados: [],
     retenidos: [],
-    desertores: []
+    desertados: [],
   });
   const [loading, setLoading] = useState(false);
-  
+  //console.log(selectedProgram);
   // Obtener los cortes iniciales basados en el ID del programa
   const obtenerCortesIniciales = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/cortes-iniciales/${selectedProgram.id}`);
+      const response = await fetch(
+        `${API_BASE_URL}/api/cortes-iniciales/${selectedProgram.id}`
+      );
       const data = await response.json();
-      Array.isArray(data) && setCortesIniciales(data);  // Si es un array, actualiza cortesIniciales
+      //console.log("data", data);
+      Array.isArray(data) && setCortesIniciales(data); // Si es un array, actualiza cortesIniciales
     } catch (error) {
       showMessage({
         message: "Error",
-        description: "Error al obtener cohortes iniciales. Revisa tu conexión e inténtalo de nuevo.",
+        description:
+          "Error al obtener cohortes iniciales. Revisa tu conexión e inténtalo de nuevo.",
         type: "danger",
         icon: "danger",
         position: "top",
-        titleStyle: { fontSize: 18, fontFamily: 'Montserrat-Bold' },
-        textStyle: { fontSize: 18, fontFamily: 'Montserrat-Regular' },
+        titleStyle: { fontSize: 18, fontFamily: "Montserrat-Bold" },
+        textStyle: { fontSize: 18, fontFamily: "Montserrat-Regular" },
         duration: 3000,
       });
     }
@@ -44,7 +57,10 @@ const CortesAcademicos = ({ selectedProgram, onNext }) => {
     let periodoActual = periodo;
 
     for (let i = 0; i < cantidadSemestres; i++) {
-      cortes.push({ label: `${anioActual}-${periodoActual}`, key: `${anioActual}-${periodoActual}` });
+      cortes.push({
+        label: `${anioActual}-${periodoActual}`,
+        key: `${anioActual}-${periodoActual}`,
+      });
 
       if (periodoActual === 1) {
         periodoActual = 2;
@@ -59,51 +75,73 @@ const CortesAcademicos = ({ selectedProgram, onNext }) => {
 
   // Lógica para calcular el corte tope (corte final) basado en el corte inicial y el tipo de programa
   useEffect(() => {
+    console.log(
+      "selectedCorteInicial en CortesAcademicos:",
+      selectedCorteInicial
+    );
+
     const cohorteTope = () => {
-      if (!selectedCorteInicial || typeof selectedCorteInicial !== 'string' || !selectedProgram || !selectedProgram.tipo) {
-        return; // Salir si selectedProgram o su tipo no están definidos
-      }
-  
-      // Obtener año y periodo del corte inicial
-      const [anioInicial, periodoInicial] = selectedCorteInicial.split('-').map(Number);
-  
-      // Determinar la cantidad de semestres según el tipo de programa
-      let cantidadSemestres = 0;
-      if (selectedProgram.tipo === "Profesional") {
-        cantidadSemestres = 4; // 4 periodos (2 años) para programas profesionales
-      } else if (selectedProgram.tipo === "Tecnologia") {
-        cantidadSemestres = 6; // 6 periodos (3 años) para programas tecnológicos
-      } else {
-        console.error("Tipo de programa no válido.");
+      if (
+        !selectedCorteInicial ||
+        typeof selectedCorteInicial !== "string" ||
+        !selectedProgram
+      ) {
         return;
       }
-  
-      // Generar los cortes finales según el tipo de programa
-      const cortesFinalesCalculados = generarCohorte(anioInicial, periodoInicial, cantidadSemestres);
-  
-      // Agregar cortes iniciales posteriores al corte calculado
+      //console.log("programa seleccionado: ", selectedProgram);
+      // Convertir tipo a string de forma segura
+      const tipoPrograma = String(selectedProgram.tipo || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+      //console.log("🚀 ~ cohorteTope ~ tipoPrograma:", tipoPrograma)
+
+      // Obtener año y periodo del corte inicial
+      const [anioInicial, periodoInicial] = selectedCorteInicial
+        .split("-")
+        .map(Number);
+
+      // Determinar semestres
+      let cantidadSemestres = 0;
+      if (tipoPrograma === "profesional") {
+        cantidadSemestres = 4;
+      } else if (tipoPrograma === "tecnologico" || tipoPrograma === "tecnologia") {
+        cantidadSemestres = 6;
+      } else {
+        console.error("Tipo de programa no válido:", selectedProgram.tipo);
+        return;
+      }
+
+      // Generar los cortes finales
+      const cortesFinalesCalculados = generarCohorte(
+        anioInicial,
+        periodoInicial,
+        cantidadSemestres
+      );
+
+      // Agregar cortes iniciales posteriores
       cortesIniciales.forEach((corte) => {
         if (corte.key > selectedCorteInicial) {
           cortesFinalesCalculados.push({ label: corte.key, key: corte.key });
         }
       });
-  
-      // Obtener solo el último corte final
-      const ultimoCorteFinal = cortesFinalesCalculados.slice(-1)[0]?.key || null;
-  
-      // Actualizar estado con el último corte final generado
+
+      // Tomar solo el último
+      const ultimoCorteFinal =
+        cortesFinalesCalculados.slice(-1)[0]?.key || null;
+
       setCorteFinal(ultimoCorteFinal);
     };
-  
+
     cohorteTope();
   }, [selectedCorteInicial, selectedProgram, cortesIniciales]);
-  
+
   // UseEffect separado para imprimir el valor actualizado de corteFinal
-useEffect(() => {
-  if (corteFinal) {
-    console.log('Cohorte Final:', corteFinal);
-  }
-}, [corteFinal]);
+  useEffect(() => {
+    if (corteFinal) {
+      //console.log("Cohorte Final:", corteFinal);
+    }
+  }, [corteFinal]);
 
   // Ejecutar cuando el programa seleccionado cambie
   useEffect(() => {
@@ -124,9 +162,9 @@ useEffect(() => {
   const capitalizeFirstLetter = (string) => {
     return string
       .toLowerCase()
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
   };
 
   const evaluarClick = async () => {
@@ -136,40 +174,44 @@ useEffect(() => {
           message: "Error",
           description: "Por favor seleccione todos los datos necesarios",
           duration: 2500,
-          titleStyle: { fontSize: 18, fontFamily: 'Montserrat-Bold' },
-          textStyle: { fontSize: 16, fontFamily: 'Montserrat-Regular' },
+          titleStyle: { fontSize: 18, fontFamily: "Montserrat-Bold" },
+          textStyle: { fontSize: 16, fontFamily: "Montserrat-Regular" },
           type: "danger",
           icon: "danger",
         });
         return;
       }
-      const response = await fetch(`${API_BASE_URL}/api/estudiantes-por-corte`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          idCarrera: selectedProgram.id,
-          periodoInicial: selectedCorteInicial,
-        }),
-      });
-
-      const data = await response.json();
-      console.log('Datos recibidos del backend:', data);
-      setDatosBackend(data);
-      data.carrera=selectedProgram;
+      const response = await fetch(
+        `${API_BASE_URL}/api/estudiantes-por-corte`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            idCarrera: selectedProgram.id,
+            codigo_periodo: selectedCorteInicial,
+            
+          }),
+        }
+      );
       
-      if (typeof onNext === 'function') {
+      const data = await response.json();
+      //console.log("Datos recibidos del backend:", data);
+      setDatosBackend(data);
+      data.carrera = selectedProgram;
+
+      if (typeof onNext === "function") {
         onNext({
           data,
           selectedCorteInicial,
-          corteFinal
+          corteFinal,
         });
       } else {
-        console.warn('onNext no está definida como una función.');
+        console.warn("onNext no está definida como una función.");
       }
     } catch (error) {
-      console.error('Error al obtener datos del backend:', error);
+      console.error("Error al obtener datos del backend:", error);
     } finally {
       setLoading(false);
     }
@@ -179,11 +221,9 @@ useEffect(() => {
     if (
       datosBackend.graduados.length !== 0 ||
       datosBackend.retenidos.length !== 0 ||
-      datosBackend.desertores.length !== 0
+      datosBackend.desertados.length !== 0
     ) {
-      const timeout = setTimeout(() => {
-       
-      }, 1000);
+      const timeout = setTimeout(() => {}, 1000);
 
       return () => clearTimeout(timeout);
     }
@@ -192,16 +232,21 @@ useEffect(() => {
   return (
     <View style={styles.container}>
       {selectedProgram && (
-        <Text style={styles.title}>{capitalizeFirstLetter(selectedProgram.programa)}</Text>
+        <Text style={styles.title}>
+          {capitalizeFirstLetter(selectedProgram.programa)}
+        </Text>
       )}
 
-      <TouchableOpacity style={styles.buttonCorte} onPress={() => setModalCorteInicialVisible(true)}>
+      <TouchableOpacity
+        style={styles.buttonCorte}
+        onPress={() => setModalCorteInicialVisible(true)}
+      >
         <Text style={styles.buttonTextCortes}>
-          {selectedCorteInicial ? `Cohorte inicial: ${selectedCorteInicial}` : 'Seleccionar Cohorte Inicial'}
+          {selectedCorteInicial
+            ? `Cohorte inicial: ${selectedCorteInicial}`
+            : "Seleccionar Cohorte Inicial"}
         </Text>
       </TouchableOpacity>
-
-      
 
       {/* Modal para seleccionar Cohorte Inicial */}
       <Modal
@@ -218,9 +263,11 @@ useEffect(() => {
                 <TouchableOpacity
                   key={index}
                   style={styles.modalItemContainer}
-                  onPress={() => corteInicialSelect(corte)}
+                  onPress={() => corteInicialSelect(corte.codigo_periodo)}
                 >
-                  <Text style={styles.modalItemTextCorte}>{corte}</Text>
+                  <Text style={styles.modalItemTextCorte}>
+                    {corte.codigo_periodo}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
@@ -235,11 +282,7 @@ useEffect(() => {
       </Modal>
 
       {/* Modal para mostrar la pantalla de carga */}
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={loading}
-      >
+      <Modal animationType="fade" transparent={true} visible={loading}>
         <View style={styles.modalContainer}>
           {loading && (
             <View>
@@ -250,6 +293,7 @@ useEffect(() => {
         </View>
       </Modal>
       {/* Botón para evaluar */}
+      
       <TouchableOpacity style={styles.evaluarButton} onPress={evaluarClick}>
         <Text style={styles.buttonText}>Evaluar</Text>
       </TouchableOpacity>
@@ -259,102 +303,101 @@ useEffect(() => {
 
 const styles = StyleSheet.create({
   container: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 30,
-    marginTop:-0,
+    marginTop: -0,
   },
   title: {
     fontSize: 20,
-    fontFamily: 'Montserrat-Bold',
-    marginTop:-30,
+    fontFamily: "Montserrat-Bold",
+    marginTop: -30,
     marginBottom: 20,
-    textAlign: 'center',
-    color: '#34531F',
-  
+    textAlign: "center",
+    color: "#34531F",
   },
   buttonCorte: {
-    width: '100%',
+    width: "100%",
     height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#575756',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#575756",
     marginBottom: 10,
     borderRadius: 8,
   },
   buttonTextCortes: {
     fontSize: 16,
-    fontFamily: 'Montserrat-Bold',
-    color: '#Fff',
-    textAlign: 'center',
+    fontFamily: "Montserrat-Bold",
+    color: "#Fff",
+    textAlign: "center",
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
   },
   modalContent: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 30,
     padding: 20,
-    textAlign: 'center',
-    width: '80%',
-    maxHeight: '70%',
+    textAlign: "center",
+    width: "80%",
+    maxHeight: "70%",
   },
   modalTitle: {
     fontSize: 20,
-    fontFamily: 'Montserrat-Bold',
-    textAlign: 'center',
+    fontFamily: "Montserrat-Bold",
+    textAlign: "center",
     marginBottom: 10,
-    color: '#34531F',
+    color: "#34531F",
   },
   modalItemContainer: {
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#ccc',
+    borderBottomColor: "#ccc",
   },
   modalItemTextCorte: {
     fontSize: 30,
-    fontFamily: 'Montserrat-Bold',
-    textAlign: 'center',
-    color: '#666',
+    fontFamily: "Montserrat-Bold",
+    textAlign: "center",
+    color: "#666",
   },
   cancelButton: {
     marginTop: 20,
-    backgroundColor: '#f44336',
+    backgroundColor: "#f44336",
     paddingVertical: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 8,
     width: 150,
-    alignSelf: 'center',
+    alignSelf: "center",
   },
   cancelButtonText: {
     fontSize: 18,
-    fontFamily: 'Montserrat-Bold',
-    color: '#fff',
+    fontFamily: "Montserrat-Bold",
+    color: "#fff",
   },
   loadingText: {
-    color: '#fff',
+    color: "#fff",
     marginTop: 10,
     fontSize: 16,
-    fontFamily: 'Montserrat-Bold',
+    fontFamily: "Montserrat-Bold",
   },
   evaluarButton: {
-    width: '60%',
+    width: "60%",
     height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#B3B3B3',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#B3B3B3",
     marginTop: 20,
     borderRadius: 8,
   },
   buttonText: {
     fontSize: 16,
-    fontFamily: 'Montserrat-Bold',
-    color: '#34531F',
-    textAlign:'center'
+    fontFamily: "Montserrat-Bold",
+    color: "#34531F",
+    textAlign: "center",
   },
 });
 

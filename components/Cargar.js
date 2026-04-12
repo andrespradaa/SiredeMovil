@@ -4,7 +4,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import Papa from 'papaparse';
 import { showMessage } from "react-native-flash-message";
 import { FontAwesome5 } from '@expo/vector-icons'; 
-import { CheckBox } from '@rneui/themed'; // Importar CheckBox desde @rneui/themed
+import { CheckBox } from 'react-native-elements'; // Importar CheckBox desde react-native-elements
 import { API_BASE_URL } from './Config';
 
 const CargarCSV = () => {

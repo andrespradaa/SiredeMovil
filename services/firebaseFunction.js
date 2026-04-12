@@ -1,12 +1,12 @@
 // services/firebaseFunctions.js
-const admin = require("firebase-admin");
+import { apps, initializeApp, firestore, auth } from "firebase-admin";
 
 // Inicializa Firebase Admin si no está inicializado
-if (!admin.apps.length) {
-    admin.initializeApp();
+if (!apps.length) {
+    initializeApp();
 }
 
-const db = admin.firestore();
+const db = firestore();
 
 /**
  * Crea un usuario en Firebase Authentication y guarda información adicional en Firestore.
@@ -17,7 +17,7 @@ const db = admin.firestore();
 const createUser = async (email, password, additionalData) => {
     try {
         // Crea el usuario en Firebase Authentication
-        const userRecord = await admin.auth().createUser({
+        const userRecord = await auth().createUser({
             email: email,
             password: password,
         });
@@ -29,10 +29,10 @@ const createUser = async (email, password, additionalData) => {
             ...additionalData,  // Otros datos adicionales que quieras guardar
         });
 
-        console.log(`Usuario creado con UID: ${userRecord.uid}`);
+        //console.log(`Usuario creado con UID: ${userRecord.uid}`);
     } catch (error) {
         console.error('Error creando usuario:', error);
     }
 };
 
-module.exports = { createUser };
+export default { createUser };

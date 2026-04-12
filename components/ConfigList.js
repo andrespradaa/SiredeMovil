@@ -12,7 +12,7 @@ const ConfigList = () => {
       </Text>
       <TouchableOpacity
         style={styles.boton}
-        onPress={() => navigation.replace('TabInicio')}
+        onPress={() => navigation.replace('DrawerNavi')}
       >
         <Text style={styles.textBoton}>Finalizar</Text>
       </TouchableOpacity>

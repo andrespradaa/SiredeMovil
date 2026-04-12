@@ -1,20 +1,30 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Animated, TouchableOpacity, Dimensions, SectionList } from 'react-native';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Animated,
+  TouchableOpacity,
+  Dimensions,
+  SectionList,
+} from "react-native";
 import { showMessage } from "react-native-flash-message";
-import { Facultades } from './Facultades';
-import { FontAwesome } from '@expo/vector-icons';
-import { API_BASE_URL } from './Config';
+import { FontAwesome } from "@expo/vector-icons";
+import { API_BASE_URL } from "./Config";
 
 const ProgramasAcademicos = ({ onProgramSelect }) => {
   const [programas, setProgramas] = useState([]);
+  /*  programas.forEach((a) =>
+    a.data.forEach((b) => console.log("->",b.tipos_programa))
+  ); */
   const [rotateAnimNaturales] = useState(new Animated.Value(0));
   const [rotateAnimSocioeconomicas] = useState(new Animated.Value(0));
   const [programaAnim] = useState(new Animated.Value(0));
 
   const normalizeString = (str) => {
-    return (str || '')
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
+    return (str || "")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
       .toLowerCase();
   };
 
@@ -22,42 +32,42 @@ const ProgramasAcademicos = ({ onProgramSelect }) => {
     const obtenerProgramas = async () => {
       try {
         const response = await fetch(`${API_BASE_URL}/api/programas`);
-        const data = await response.json();   
-        console.log(data)
-        const groupedPrograms = [
-          {
-            title: 'Facultad de Ciencias Naturales e Ingenierías',
-            data: data.filter(programa =>
-              Facultades["FACULTAD DE CIENCIAS NATURALES E INGENIERÍAS"].some(facultadPrograma =>
-                normalizeString(facultadPrograma) === normalizeString(programa.nombre_programa)
-              )
-            ),
-            rotateAnim: rotateAnimNaturales,
-            isOpen: false,
-          },
-          {
-            title: 'Facultad de Ciencias Socioeconómicas y Empresariales',
-            data: data.filter(programa =>
-              Facultades["FACULTAD DE CIENCIAS SOCIOECONÓMICAS Y EMPRESARIALES"].some(facultadPrograma =>
-                normalizeString(facultadPrograma) === normalizeString(programa.nombre_programa)
-              )
-            ),
-            rotateAnim: rotateAnimSocioeconomicas,
-            isOpen: false,
-          }
-        ];
+        const data = await response.json();
+        //console.log("Programas académicos obtenidos:", data);
+        //data.forEach((a)=>console.log(a.facultades.nombre_facultad))
+        const cleanString = (str) => str.replace(/^"|"$/g, "").trim();
 
-        setProgramas(groupedPrograms);
-      
+        const facultadesMap = {};
+
+        data.forEach((programa) => {
+          const facultadRaw =
+            programa.facultades?.nombre_facultad || "Sin facultad";
+          //console.log("Programas recibidos por el BE: ",programa);
+          const facultad = cleanString(facultadRaw);
+          //console.log(facultad)
+          if (!facultadesMap[facultad]) {
+            facultadesMap[facultad] = [];
+          }
+
+          facultadesMap[facultad].push(programa);
+        });
+        //console.log("Facultades mapeadas:", facultadesMap);
+        const grouped = Object.keys(facultadesMap).map((fac, index) => ({
+          id: index,
+          title: fac,
+          rotateAnim: new Animated.Value(0),
+          isOpen: false,
+          data: facultadesMap[fac],
+        }));
+        //console.log("Programas agrupados por facultad:", grouped[0].data[1].nombre);
+        setProgramas(grouped);
       } catch (error) {
+        console.error("Error cargando programas:", error);
+
         showMessage({
           message: "Error",
-          description: "No se pudo conectar con la base de datos. Por favor, revisa tu conexión e inténtalo de nuevo.",
+          description: "No se pudo conectar con la base de datos.",
           type: "danger",
-          icon: "danger",
-          titleStyle: { fontSize: 18, fontFamily: 'Montserrat-Bold' }, // Estilo del título
-          textStyle: { fontSize: 18, fontFamily: 'Montserrat-Regular' }, // Estilo del texto
-          duration: 3000,
         });
       }
     };
@@ -66,27 +76,18 @@ const ProgramasAcademicos = ({ onProgramSelect }) => {
   }, []);
 
   const toggleAnimation = (isOpen, rotateAnim) => {
-    Animated.timing(rotateAnim, {
+    Animated.spring(rotateAnim, {
       toValue: isOpen ? 1 : 0,
-      duration: 300,
+      friction: 6,
+      tension: 60,
       useNativeDriver: true,
     }).start();
   };
 
-  const rotateNaturales = rotateAnimNaturales.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '90deg'],
-  });
-
-  const rotateSocioeconomicas = rotateAnimSocioeconomicas.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '90deg'],
-  });
-
   const toggle = (section) => {
     const newData = programas.map((item) => {
-      if (item.title === section.title) {
-        toggleAnimation(!section.isOpen, section.rotateAnim);
+      if (item.id === section.id) {
+        toggleAnimation(!section.isOpen, item.rotateAnim);
         return { ...item, isOpen: !section.isOpen };
       }
       return item;
@@ -94,55 +95,47 @@ const ProgramasAcademicos = ({ onProgramSelect }) => {
     setProgramas(newData);
   };
 
-  useEffect(() => {
-    const naturalesSection = programas.find(section => section.title === 'Facultad de Ciencias Naturales e Ingenierías');
-    if (naturalesSection && naturalesSection.isOpen) {
-      programaAnim.setValue(0);
-      Animated.timing(programaAnim, {
-        toValue: 1,
-        duration: 500,
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [programas.find(section => section.title === 'Facultad de Ciencias Naturales e Ingenierías')?.isOpen]);
-
   const capitalizeFirstLetter = (string) => {
-    return (string || '')
+    return (string || "")
       .toLowerCase()
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+      .split(" ")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
   };
 
   const programSelect = (programa) => {
     if (onProgramSelect) {
       onProgramSelect({
-        cod_snies: programa.codigo_programa,
-        programa: programa.nombre_programa,
-        tipo: programa.tipo_programa,
-        id: programa.id_carrera
+        cod_snies: programa.codigo_snies,
+        programa: programa.nombre,
+        tipo: programa.tipos_programa.nombre,
+        id: programa.id_carrera,
       });
     }
   };
 
-  const renderItem = ({ item, index, section }) => {
-    if (!section.isOpen || index % 2 !== 0) return null;
-
-    const secondItem = section.data[index + 1];
-
+  const renderItem = ({ item, section }) => {
+    if (!section.isOpen) return null;
     return (
       <View style={styles.programRow}>
-        <Animated.View style={[styles.programButtonWrapper, { opacity: programaAnim, transform: [{ scale: programaAnim }] }]}>
-          <TouchableOpacity style={styles.programButton} onPress={() => programSelect(item)}>
-            <Text style={styles.programText}>{capitalizeFirstLetter(item.nombre_programa)}</Text>
+        <TouchableOpacity
+          style={styles.programButton}
+          onPress={() => programSelect(item)}
+        >
+          <Text style={styles.programText}>
+            {capitalizeFirstLetter(item.nombre)}
+          </Text>
+        </TouchableOpacity>
+
+        {item && (
+          <TouchableOpacity
+            style={styles.programButton}
+            onPress={() => programSelect(item)}
+          >
+            <Text style={styles.programText}>
+              {capitalizeFirstLetter(item.nombre)}
+            </Text>
           </TouchableOpacity>
-        </Animated.View>
-        {secondItem && (
-          <Animated.View style={[styles.programButtonWrapper, { opacity: programaAnim, transform: [{ scale: programaAnim }] }]}>
-            <TouchableOpacity style={styles.programButton} onPress={() => programSelect(secondItem)}>
-              <Text style={styles.programText}>{capitalizeFirstLetter(secondItem.nombre_programa)}</Text>
-            </TouchableOpacity>
-          </Animated.View>
         )}
       </View>
     );
@@ -150,101 +143,119 @@ const ProgramasAcademicos = ({ onProgramSelect }) => {
 
   const renderSectionHeader = ({ section }) => (
     <View style={styles.facultadContainer}>
-      <TouchableOpacity onPress={() => toggle(section)} style={styles.facultadButton}>
+      <TouchableOpacity
+        onPress={() => toggle(section)}
+        style={styles.facultadButton}
+      >
         <Text style={styles.facultadText}>
           {section.title} ({section.data.length})
         </Text>
-        <Animated.View style={{ transform: [{ rotate: section.title.includes('Naturales') ? rotateNaturales : rotateSocioeconomicas }] }}>
+
+        <Animated.View
+          style={{
+            transform: [
+              {
+                rotate: section.rotateAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ["0deg", "90deg"],
+                }),
+              },
+            ],
+          }}
+        >
           <FontAwesome name="caret-right" size={24} color="#fff" />
         </Animated.View>
       </TouchableOpacity>
+
       {section.isOpen && <View style={styles.programContainer} />}
     </View>
   );
 
   const EmptyComponent = () => (
     <Text style={styles.errorText}>
-      No se encontraron programas academicos. Verifica tu conexión a internet.
+      No se encontraron programas académicos. Verifica tu conexión a internet.
     </Text>
   );
 
   return (
-      <View style={styles.container}>
-    <SectionList
-      sections={programas}
-      keyExtractor={(item, index) => item.codigo_programa?.toString() + index}
-      renderItem={renderItem}
-      renderSectionHeader={renderSectionHeader}
-      contentContainerStyle={styles.listContent}
-      ListEmptyComponent={EmptyComponent}
-    />
-  </View>
+    <View style={styles.container}>
+      <SectionList
+        sections={programas}
+        keyExtractor={(item, index) => item.id_carrera.toString() + "_" + index}
+        renderItem={renderItem}
+        renderSectionHeader={renderSectionHeader}
+        contentContainerStyle={styles.listContent}
+        ListEmptyComponent={EmptyComponent} 
+      />
+    </View>
   );
 };
 
-const { height: windowHeight } = Dimensions.get('window');
+const { height: windowHeight } = Dimensions.get("window");
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 30,
-    marginTop: -30
+    marginTop: -30,
   },
   facultadContainer: {
-    width: '100%',
+    width: "100%",
   },
   facultadButton: {
-    backgroundColor: '#575756',
+    backgroundColor: "#575756",
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 5,
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginBottom: 5,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
   },
   facultadText: {
     fontSize: 15,
-    fontFamily: 'Montserrat-Bold',
-    color: '#fff',
-    marginRight: 20,
+    fontFamily: "Montserrat-Bold",
+    color: "#fff",
   },
   programContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
   },
   programRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 5,
   },
   programButtonWrapper: {
-    width: '49%', // Ajuste para que dos botones ocupen el 100% con un margen
+    width: "49%",
     marginBottom: 5,
   },
   programButton: {
-    backgroundColor: '#B3B3B3',
+    backgroundColor: "#918c8cff",
     borderRadius: 5,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     height: windowHeight * 0.18,
+    padding: 12,
+    marginBottom: 10,
   },
   programText: {
     fontSize: 16,
     paddingHorizontal: 10,
-    fontFamily: 'Montserrat-Bold',
-    color: '#34531F',
-    textAlign: 'center',
+    fontFamily: "Montserrat-Bold",
+    color: "#34531F",
+    textAlign: "center",
   },
   errorText: {
     fontSize: 20,
-    color: '#6D100A',
-    fontFamily: 'Montserrat-Bold',
+    color: "#6D100A",
+    fontFamily: "Montserrat-Bold",
     marginTop: 20,
   },
   listContent: {
     flexGrow: 1,
   },
 });
-
+console.clear();
 export default ProgramasAcademicos;

@@ -4,7 +4,6 @@ import ProgramasAcademicos from './ProgramasAcademicos';
 import CortesAcademicos from './CortesAcademicos';
 import OpcionesInforme from './OpcionesInforme';
 
-
 const programasAcademicosData = [
   { id: 1, title: 'Seleccione el programa académico al cual quiere consultar:', color: '#132F20' },
   { id: 2, title: 'Seleccione un cohorte para el informe:', color: '#132F20' },
